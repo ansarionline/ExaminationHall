@@ -1,1 +1,1 @@
-python quiz.py
+web: python quiz.py
