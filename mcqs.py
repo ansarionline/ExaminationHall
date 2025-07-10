@@ -2,21 +2,33 @@ from nicegui import ui
 import json
 import os
 
-def save_file(name, total, gained, key = 'mcqs'):
+import os, json
+
+def save_file(name, total, gained, key='mcqs', wrong=None):
     file_path = f'students/{name}.json'
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    # Load existing data if file exists and is valid JSON
     if os.path.exists(file_path):
-        with open(file_path, 'r') as file:
-            try:
+        try:
+            with open(file_path, 'r') as file:
                 data = json.load(file)
-            except json.JSONDecodeError:
-                data = {}
+        except (json.JSONDecodeError, FileNotFoundError):
+            data = {}
     else:
         data = {}
+
+    # Store the result under the specified key (e.g., "mcqs", "sqs", etc.)
     data[key] = {
         'total': total,
         'gained': gained
     }
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    # Optionally include wrong answers if provided
+    if wrong:
+        data[key]['wrong'] = wrong
+
+    # Save updated data
     with open(file_path, 'w') as file:
         json.dump(data, file, indent=2)
 
@@ -30,21 +42,29 @@ def add_mcqs(mcqs=[], part_stat = '',
     for i,item in enumerate(mcqs):
         with ui.row():
             ui.markdown(part_stat.replace('{n}', f'{i + 1}') + item['ques']).style(styling)
-            ui.markdown('-----' + str(item['marks']))
+            ui.markdown('-----' + str(item.get('marks', 1)))
         radio = ui.radio(item['choices']).style(radio_styling)
         radios.append(radio)
         answers.append(item['answer'])
-        total += item['marks']
-    total = total
+        total += item.get('marks', 1)
     return radios, answers, total
 
-def submit_mcqs(radios, answers, name, total, log, qs, exp = None):
-    score = sum(1 for i, r in enumerate(radios) if r.value == answers[i])
+def submit_mcqs(radios, answers, name, total, log, qs, exp=None):
+    score = 0
+    wrong = {}
+
+    for i, r in enumerate(radios):
+        user_choice = r.value
+        correct_choice = answers[i]
+        if user_choice == correct_choice:
+            score += 1
+        else:
+            wrong[f"Q#{i+1}"] = [user_choice, correct_choice]
+        r.disable()
+
     log(f'Submitted: Score: {score}/{total}', name)
     ui.notify(f"{name}, you scored {score}/{total}")
-    for i in radios:
-        i.disable()
-    save_file(name, total, score, qs)
+    save_file(name, total, score, qs, wrong=wrong)
     if exp:
         exp.set_value(False)
         exp.disable()
@@ -77,4 +97,3 @@ def create_mcqs(name='', mcqs=[],  log = lambda:(),
                         log,
             f"Q#{i}: MCQs",
             exp))
-
