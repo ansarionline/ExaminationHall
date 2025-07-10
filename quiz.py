@@ -256,4 +256,4 @@ def admin():
         dialog.open()
     else:
         admin_page.visible = True
-ui.run()
+ui.run(host='0.0.0.0', port = '8080')
