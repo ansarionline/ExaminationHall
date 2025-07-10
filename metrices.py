@@ -1,46 +1,35 @@
-from copy import deepcopy
 from nicegui import ui
 import asyncio
+from copy import deepcopy
 
 def create_metrices(METRICS):
-    column_defs = [
-        {'headerName': 'Student', 'field': 'name'},
-        {'headerName': 'Started At', 'field': 'start_time'},
-        {'headerName': 'Exam Status', 'field': 'status'},
-        {'headerName': 'Violations', 'field': 'violations'},
+    columns = [
+        {"name": "name", "label": "Name", "field": "name"},
+        {"name": "start_time", "label": "StartedAt", "field": "start_time"},
+        {"name": "status", "label": "Status", "field": "status"},
+        {"name": "violations", "label": "Violations", "field": "violations"},
     ]
 
-    grid = ui.aggrid({
-        'defaultColDef': {
-            'flex': 1,
-            'suppressMovable': True,
-        },
-        'columnDefs': column_defs,
-        'rowData': [],
-        'rowSelection': 'single',
-        'animateRows': True,
-    }).classes('w-full').style('min-height: 40vh; overflow-y: auto;')
+    table = ui.table(columns=columns, rows=[]).classes('w-full')\
+        .style('height: 50vh; display: block; overflow-y: auto; overflow-x: auto')
 
-    prev_snapshot = deepcopy(METRICS.metrics)
+    prev_snapshot = deepcopy(METRICS.metrics)  # use deep copy
 
-    async def refresh_aggrid():
-        await asyncio.sleep(0)
+    async def refresh_metrices():
         nonlocal prev_snapshot
+        await asyncio.sleep(0)
 
         if prev_snapshot != METRICS.metrics:
             new_rows = [
                 {
-                    'name': name,
-                    'start_time': data.get('start_time', ''),
-                    'status': data.get('status', ''),
-                    'violations': data.get('violations', 0),
+                    "name": name,
+                    "start_time": data.get("start_time", ""),
+                    "status": data.get("status", ""),
+                    "violations": data.get("violations", 0)
                 }
                 for name, data in METRICS.metrics.items()
             ]
-            # Sort by most recent addition (if desired)
-            new_rows.reverse()  # newest entries at the top
-            grid.options['rowData'] = new_rows
-            grid.update()
-            prev_snapshot = deepcopy(METRICS.metrics)
+            table.rows = new_rows[::-1]
+            prev_snapshot = deepcopy(METRICS.metrics)  # update snapshot deeply
 
-    ui.timer(0.25, lambda: asyncio.create_task(refresh_aggrid()))
+    ui.timer(0.25, lambda: asyncio.create_task(refresh_metrices()))
