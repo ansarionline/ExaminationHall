@@ -221,6 +221,7 @@ class AUTHENTICATED:
 
 @ui.page(ADMIN_PATH)
 def admin():
+    AUTHENTICATED.authenticated = False
     with ui.column(align_items='center')\
         .classes('items-center justify-center w-full') as admin_page:
         with ui.card(align_items='center').style('width: 600px; max-width: 90vw; min-height: 500px; max-height: 90vh; overflow-y: auto;'):
@@ -255,6 +256,4 @@ def admin():
         dialog.open()
     else:
         admin_page.visible = True
-import os
-port = int(os.environ.get("PORT", 8080))
-ui.run(host='0.0.0.0', port=port)
+ui.run()
