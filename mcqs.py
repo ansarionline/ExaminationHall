@@ -97,3 +97,4 @@ def create_mcqs(name='', mcqs=[],  log = lambda:(),
                         log,
             f"Q#{i}: MCQs",
             exp))
+
