@@ -204,26 +204,26 @@ def exam(name: str):
         Questions = get_questions()
         title = Questions.others.get('title', 'Exam')
         ui.markdown(title)
-        def log_statu(type_, v):
-            log(f'On Q#{i} of type {type_} : {v}', name)
+        def log_statu(type_, v, i):
+            log(f'{type_} : {v}', name)
             METRICS.metrics[name]['status'] = f'Q#{i}: {type_}'
         for i, q in enumerate(Questions.questions.keys()):
-            i = i + 1
-            if   q.__contains__('mcq'):
-                create_mcqs(name,Questions.questions[q], log, 
-                        lambda v: log_statu('mcq',v), i)
-            elif q.__contains__('sqs'):
-                create_sqs(name, Questions.questions[q], log, 
-                        lambda v: log_statu('sqs',v), i)
-            elif q.__contains__('dtc'):
-                create_dtc(name, Questions.questions[q], log, 
-                        lambda v: log_statu('dtc',v), i)
-            elif q.__contains__('poc'):
-                create_po(name, Questions.questions[q], log, 
-                        lambda v: log_statu('poc',v), i)
-            elif q.__contains__('wtc'):
+            idx = i + 1
+            if 'mcq' in q:
+                create_mcqs(name, Questions.questions[q], log,
+                    lambda v, i=idx: log_statu('mcq', v, i), idx)
+            elif 'sqs' in q:
+                create_sqs(name, Questions.questions[q], log,
+                    lambda v, i=idx: log_statu('sqs', v, i), idx)
+            elif 'dtc' in q:
+                create_dtc(name, Questions.questions[q], log,
+                    lambda v, i=idx: log_statu('dtc', v, i), idx)
+            elif 'poc' in q:
+                create_po(name, Questions.questions[q], log,
+                    lambda v, i=idx: log_statu('poc', v, i), idx)
+            elif 'wtc' in q:
                 create_prac(name, Questions.questions[q], log,
-                        lambda v: log_statu('wtc',v), i)
+                    lambda v, i=idx: log_statu('wtc', v, i), idx)
 
 def start_exam(name_input):
     entered_name = name_input.value.strip().replace(" ", "_")
