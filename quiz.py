@@ -20,6 +20,9 @@ class STUDENTS:
 class METRICS:
    metrics: dict[str, dict] = {}
 
+class TIMERS:
+    timer:dict[str, float] = {}
+
 @app.get('/download-all-students')
 def download_all_students():
     temp_zip_path = tempfile.mktemp(suffix='.zip')
@@ -31,54 +34,83 @@ def download_all_students():
                 zipf.write(full_path, arcname=os.path.join('students', arcname))
     return FileResponse(temp_zip_path, filename='students_all.zip', media_type='application/zip')
 
+from asyncio import sleep
+import asyncio
+
+PENDING_UNLOADS = {}
+UNLOAD_TASKS = {}
+
+from datetime import datetime, timedelta
+
+LAST_EVENTS = {}
+
 @app.post('/_nicegui_call/log_focus_loss')
 async def log_focus_loss(request: Request):
     data = await request.json()
     name = data.get("name", "Unknown")
     reason = data.get("reason", "unknown")
+
+    now = datetime.now()
+    LAST_EVENTS[name] = (reason, now)
+
+    if name not in STUDENTS.students:
+        return
+
     if reason == 'page-unload':
-        if name in STUDENTS.students:
-            STUDENTS.students.remove(name)
-            METRICS.metrics[name]['status'] = "Done"
-            METRICS.metrics[name]['violations'] -= 1
-            log(f"left the exam", name)
+        if name in UNLOAD_TASKS:
+            UNLOAD_TASKS[name].cancel()
+
+        async def confirm_exit():
+            await sleep(2.5)
+            last_reason, last_time = LAST_EVENTS.get(name, ('', datetime.min))
+            # 🧠 Ensure no return or activity since the page-unload
+            if name in STUDENTS.students and last_reason == 'page-unload' and (datetime.now() - last_time) > timedelta(seconds=2):
+                STUDENTS.students.remove(name)
+                METRICS.metrics[name]['status'] = "Done"
+                log(f"left the exam", name)
+            UNLOAD_TASKS.pop(name, None)
+
+        UNLOAD_TASKS[name] = asyncio.create_task(confirm_exit())
+
+    elif reason == 'return':
+        task = UNLOAD_TASKS.pop(name, None)
+        if task:
+            task.cancel()
+            log("Returned to exam tab", name)
+
+    elif reason == 'visibility-hidden':
+        METRICS.metrics.setdefault(name, {}).setdefault('violations', 0)
+        METRICS.metrics[name]['violations'] += 1
+        log("Focus lost: visibility-hidden", name)
+
     else:
         log(f"Focus lost: [{reason}]", name)
-        if reason == 'visibility-hidden' and name in METRICS.metrics:
-            METRICS.metrics[name]['violations'] += 1
-    print(name, reason)
 
-    
 def apply_exam_protection_js(name: str):
     ui.run_javascript(f"""
-    let lastLogTime = 0;
+    let lastLog = 0;
+    let sentOnce = false;
+    let returnLogged = false;
     const originalTitle = document.title;
 
-    function logFocusLoss(reason = "focus-lost") {{
+    function sendEvent(reason) {{
         const now = Date.now();
-        if (now - lastLogTime < 1000) return;
-        lastLogTime = now;
-
-        try {{
-            navigator.sendBeacon(
-                '/_nicegui_call/log_focus_loss',
-                new Blob([JSON.stringify({{ name: '{name}', reason }})], {{
-                    type: 'application/json'
-                }})
-            );
-        }} catch (e) {{
-            console.error("Beacon failed", e);
-        }}
+        if (now - lastLog < 1000) return;
+        lastLog = now;
+        navigator.sendBeacon(
+            '/_nicegui_call/log_focus_loss',
+            new Blob([JSON.stringify({{ name: '{name}', reason: reason }})], {{ type: 'application/json' }})
+        );
     }}
 
-    function showWarningOverlay(message) {{
-        if (document.getElementById('exam-warning-overlay')) return; // avoid multiple overlays
+    function showOverlay(msg) {{
+        if (document.getElementById('exam-warning-overlay')) return;
 
-        const overlay = document.createElement('div');
         document.title = "⚠️ Warning!";
-        overlay.id = "exam-warning-overlay";
-        overlay.innerText = message;
-        overlay.style.cssText = `
+        const overlay = document.createElement('div');
+        overlay.id = 'exam-warning-overlay';
+        overlay.innerText = msg;
+        overlay.style = `
             position: fixed;
             top: 0; left: 0;
             width: 100vw; height: 100vh;
@@ -94,55 +126,54 @@ def apply_exam_protection_js(name: str):
         document.body.appendChild(overlay);
 
         setTimeout(() => {{
-            if (document.getElementById('exam-warning-overlay')) {{
-                document.body.removeChild(overlay);
-            }}
+            overlay.remove();
             document.title = originalTitle;
         }}, 5000);
     }}
 
-    // 📛 Detect tab switch/minimize
-    document.addEventListener('visibilitychange', function () {{
+    // 🕵️ Detect tab switch or minimize
+    document.addEventListener('visibilitychange', () => {{
         if (document.visibilityState === 'hidden') {{
-            logFocusLoss("visibility-hidden");
-            showWarningOverlay("⚠️ Do not leave the exam tab!");
+            sendEvent('visibility-hidden');
+            showOverlay("⚠️ Do not leave the tab!");
         }}
     }});
-
-    // 🔁 Restore title if back from cache (mobile)
-    window.addEventListener("pageshow", function (e) {{
-        document.title = originalTitle;
-    }});
-
-    // 🧯 Warn before leaving page
-    window.addEventListener("beforeunload", function(event) {{
-        logFocusLoss("page-unload");
-        event.preventDefault();
-        event.returnValue = '';
-        return '';
-    }});
-
-    // 🛡 Disable right-click
-    document.addEventListener("contextmenu", function(e) {{
+    window.addEventListener('beforeunload', (e) => {{
+        if (!sentOnce) {{
+            sentOnce = true;
+            setTimeout(() => sendEvent('page-unload'), 200);
+        }}
         e.preventDefault();
+        e.returnValue = '';
     }});
 
-    // 🚫 Block key combinations
-    document.addEventListener("keydown", function(e) {{
+    window.addEventListener('pageshow', () => {{
+        document.title = originalTitle;
+        sendEvent('return');
+    }});
+
+    window.addEventListener('focus', () => {{
+        sendEvent('return');
+    }});
+
+    // 🛡️ Disable right-click
+    document.addEventListener('contextmenu', e => e.preventDefault());
+
+    // 🔒 Block developer shortcuts and tab manipulations
+    document.addEventListener('keydown', e => {{
+        const forbiddenKeys = ["t", "w", "r", "p", "u", "s"];
         if (
             e.key === "F12" ||
-            (e.ctrlKey && (
-                e.key === "t" || e.key === "w" || e.key === "r" ||
-                e.key === "p" || e.key === "u" || e.key === "s" ||
-                (e.shiftKey && e.key === "I")
-            ))
+            (e.ctrlKey && forbiddenKeys.includes(e.key.toLowerCase())) ||
+            (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "i")
         ) {{
             e.preventDefault();
             e.stopPropagation();
-            showWarningOverlay("⚠️ Shortcut blocked!");
+            showOverlay("⚠️ Shortcut blocked!");
         }}
     }});
     """)
+
 
 ADMIN_PATH = '/a/d/m/i/n/admin'
 os.environ.setdefault("ADMIN_PASSWORD", "mypass")
@@ -163,7 +194,7 @@ def exam(name: str):
         apply_exam_protection_js(name)
         log('Started Exam', name)
         METRICS.metrics[name] = {
-            "start_time": datetime.datetime.now().isoformat().split('T')[1].split('.')[0],
+            "start_time": datetime.now().isoformat().split('T')[1].split('.')[0],
             "status": "Started",
             "violations": 0
         }
