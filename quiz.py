@@ -257,4 +257,4 @@ def admin():
     else:
         admin_page.visible = True
 port = int(os.environ.get("PORT", 8080))
-ui.run(host="0.0.0.0", port=port)
+ui.run(host="0.0.0.0", port=port, favicon='📜', title='Examination Hall')
