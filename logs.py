@@ -7,8 +7,12 @@ def create_logs(log):
         {"name": "student", "label": "Student", "field": "student"},
         {"name": "event", "label": "Event", "field": "event"},
     ]
+    def clear():
+        with open('data/logs.csv', 'w') as f:
+            f.write('')
     table = ui.table(columns=columns, rows=[]).classes('w-full')\
-    .style('height: 60vh; display: block; overflow-y: auto; overflow-x: auto')
+    .style('height: 50vh; display: block; overflow-y: auto; overflow-x: auto')
+    ui.button("Clear", on_click=clear)
     async def refresh_logs():
         await asyncio.sleep(0)
         log_data = log()
