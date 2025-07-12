@@ -12,7 +12,8 @@ from metrices import create_metrices
 import os, datetime
 import zipfile
 import tempfile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
 class STUDENTS:
     students = []
@@ -20,8 +21,12 @@ class STUDENTS:
 class METRICS:
    metrics: dict[str, dict] = {}
 
-class TIMERS:
-    timer:dict[str, float] = {}
+@app.middleware("http")
+async def redirect_http_to_https(request: Request, call_next):
+    if request.url.scheme == "http":
+        url = request.url._url.replace("http://", "https://", 1)
+        return RedirectResponse(url)
+    return await call_next(request)
 
 @app.get('/download-all-students')
 def download_all_students():
